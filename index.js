@@ -1,5 +1,4 @@
 // 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB)
-
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -9,7 +8,6 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 🔗 MongoDB-yhteys
 mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true
@@ -17,7 +15,6 @@ mongoose.connect(process.env.MONGO_URI, {
 .then(() => console.log('✅ MongoDB-yhteys OK'))
 .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
 
-// 📦 Mongoose-skeemat
 const RequestSchema = new mongoose.Schema({
   from: String,
   to: String,
@@ -42,35 +39,28 @@ const OfferSchema = new mongoose.Schema({
 const Request = mongoose.model('Request', RequestSchema);
 const Offer = mongoose.model('Offer', OfferSchema);
 
-// 📬 Reitit
-
-// Hae kaikki kuljetuspyynnöt
 app.get('/api/requests', async (req, res) => {
   const data = await Request.find().sort({ createdAt: -1 });
   res.json(data);
 });
 
-// Lisää uusi kuljetuspyyntö
 app.post('/api/requests', async (req, res) => {
   const newRequest = new Request(req.body);
   const saved = await newRequest.save();
   res.status(201).json(saved);
 });
 
-// Hae kaikki kuljetustarjoukset
 app.get('/api/offers', async (req, res) => {
   const data = await Offer.find().sort({ createdAt: -1 });
   res.json(data);
 });
 
-// Lisää uusi kuljetustarjous
 app.post('/api/offers', async (req, res) => {
   const newOffer = new Offer(req.body);
   const saved = await newOffer.save();
   res.status(201).json(saved);
 });
 
-// 🔌 Käynnistä palvelin
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`);
