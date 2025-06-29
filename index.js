@@ -105,6 +105,13 @@ app.get('/me', (req, res) => {
   if (req.isAuthenticated()) res.json(req.user);
   else res.status(401).json({});
 });
+app.get('/me', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json(req.user); // sisältää esim. req.user.name
+  } else {
+    res.status(401).json({});
+  }
+});
 
 // 🔑 Auth-reitit – Google & Apple
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
