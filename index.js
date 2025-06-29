@@ -103,7 +103,7 @@ app.get('/me', (req, res) => {
 // 🔑 Auth-reitit – Google & Apple
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }), (req, res) => {
-  res.redirect('/public/index.html');
+  res.redirect('https://automaton.fi/tavarakyyti.html');
 });
 
 
