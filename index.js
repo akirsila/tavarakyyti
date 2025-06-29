@@ -89,7 +89,7 @@ app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'em
 
 app.get('/auth/google/callback', passport.authenticate('google', {
   failureRedirect: '/',
-  successRedirect: '/public/index.html'
+  successRedirect: 'https://automaton.fi/tavarakyyti.html'
 }));
 
 app.get('/logout', (req, res) => {
