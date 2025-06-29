@@ -5,7 +5,7 @@ const cors = require('cors');
 const session = require('express-session');
 const passport = require('passport');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const AppleStrategy = require('passport-apple');
+
 require('dotenv').config();
 
 const app = express();
