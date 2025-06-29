@@ -6,9 +6,12 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "express": "^4.18.2",
-    "mongoose": "^8.0.0",
-    "cors": "^2.8.5",
-    "dotenv": "^16.0.3"
+ "express": "^4.18.2",
+  "mongoose": "^8.0.0",
+  "cors": "^2.8.5",
+  "dotenv": "^16.0.3",
+  "passport": "^0.6.0",
+  "passport-google-oauth20": "^2.0.0",
+  "express-session": "^1.17.3"
   }
 }
