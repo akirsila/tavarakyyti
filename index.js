@@ -120,22 +120,15 @@ app.post('/api/offers', async (req, res) => {
 
 
 
-app.get('/api/requests', async (req, res) => {
-  const data = await Request.find().sort({ createdAt: -1 });
+
+
+app.get('/api/my-requests', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({});
+  const data = await Request.find({ user: req.user._id });
   res.json(data);
 });
-app.post('/api/requests', async (req, res) => {
-  const saved = await new Request(req.body).save();
-  res.status(201).json(saved);
-});
-app.get('/api/offers', async (req, res) => {
-  const data = await Offer.find().sort({ createdAt: -1 });
-  res.json(data);
-});
-app.post('/api/offers', async (req, res) => {
-  const saved = await new Offer(req.body).save();
-  res.status(201).json(saved);
-});
+
+
 app.get('/me', (req, res) => {
   if (req.isAuthenticated()) res.json(req.user);
   else res.status(401).json({});
