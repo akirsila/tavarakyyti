@@ -69,26 +69,7 @@ passport.use(new GoogleStrategy({
   return done(null, user);
 }));
 
-// 🍏 Apple-strategia
-passport.use(new AppleStrategy({
-  clientID: process.env.APPLE_CLIENT_ID,
-  teamID: process.env.APPLE_TEAM_ID,
-  keyID: process.env.APPLE_KEY_ID,
-  privateKey: process.env.APPLE_PRIVATE_KEY.replace(/\\n/g, '\n'),
-  callbackURL: process.env.APPLE_CALLBACK_URL,
-  scope: ['name', 'email']
-}, async (accessToken, refreshToken, idToken, profile, done) => {
-  let user = await User.findOne({ providerId: idToken.sub });
-  if (!user) {
-    user = await User.create({
-      provider: 'apple',
-      providerId: idToken.sub,
-      name: profile?.name?.firstName || 'Apple User',
-      email: idToken.email
-    });
-  }
-  return done(null, user);
-}));
+
 
 // 🔄 Istunnon serialisointi
 passport.serializeUser((user, done) => done(null, user._id));
@@ -125,10 +106,6 @@ app.get('/auth/google/callback', passport.authenticate('google', { failureRedire
   res.redirect('/public/index.html');
 });
 
-app.get('/auth/apple', passport.authenticate('apple'));
-app.post('/auth/apple/callback', passport.authenticate('apple', { failureRedirect: '/' }), (req, res) => {
-  res.redirect('/public/index.html');
-});
 
 app.get('/logout', (req, res) => {
   req.logout(() => res.redirect('/'));
