@@ -69,7 +69,13 @@ passport.use(new GoogleStrategy({
   return done(null, user);
 }));
 
-
+function ensureAuth(req, res, next) {
+  if (req.isAuthenticated && req.isAuthenticated()) {
+    return next();
+  } else {
+    res.status(401).json({ error: 'Kirjautuminen vaaditaan' });
+  }
+}
 
 // 🔄 Istunnon serialisointi
 passport.serializeUser((user, done) => done(null, user._id));
