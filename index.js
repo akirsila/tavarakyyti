@@ -1,33 +1,25 @@
-// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Google + Apple Auth)
+// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Auth)
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
-const session = require('express-session');
 const passport = require('passport');
+const session = require('express-session');
 const GoogleStrategy = require('passport-google-oauth20').Strategy;
-
 require('dotenv').config();
 
 const app = express();
-app.use(cors());
+app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(session({ secret: 'supersecret', resave: false, saveUninitialized: true }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-// 🔌 MongoDB
+// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB-yhteys OK'))
   .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
 
-// 📦 Mongoose-mallit
-const UserSchema = new mongoose.Schema({
-  provider: String,
-  providerId: String,
-  name: String,
-  email: String,
-  createdAt: { type: Date, default: Date.now }
-});
+// Schemat
 const RequestSchema = new mongoose.Schema({
   from: String,
   to: String,
@@ -35,7 +27,7 @@ const RequestSchema = new mongoose.Schema({
   size: String,
   price: Number,
   details: String,
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 🆕
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
 
@@ -47,20 +39,27 @@ const OfferSchema = new mongoose.Schema({
   vehicle: String,
   priceRange: String,
   details: String,
-  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 🆕
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
 
+const UserSchema = new mongoose.Schema({
+  provider: String,
+  providerId: String,
+  name: String,
+  email: String,
+  createdAt: { type: Date, default: Date.now }
 });
-const User = mongoose.model('User', UserSchema);
-const Offer = mongoose.model('Offer', OfferSchema);
-const Request = mongoose.model('Request', RequestSchema);
 
-// 🔐 Google-strategia
+const Request = mongoose.model('Request', RequestSchema);
+const Offer = mongoose.model('Offer', OfferSchema);
+const User = mongoose.model('User', UserSchema);
+
+// Passport – Google auth
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL
+  callbackURL: '/auth/google/callback'
 }, async (accessToken, refreshToken, profile, done) => {
   let user = await User.findOne({ providerId: profile.id });
   if (!user) {
@@ -74,85 +73,61 @@ passport.use(new GoogleStrategy({
   return done(null, user);
 }));
 
-function ensureAuth(req, res, next) {
-  if (req.isAuthenticated && req.isAuthenticated()) {
-    return next();
-  } else {
-    res.status(401).json({ error: 'Kirjautuminen vaaditaan' });
-  }
-}
-
-// 🔄 Istunnon serialisointi
 passport.serializeUser((user, done) => done(null, user._id));
 passport.deserializeUser(async (id, done) => {
   const user = await User.findById(id);
   done(null, user);
 });
 
-// 🛣 API-reitit
-app.post('/api/requests', async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: 'Kirjaudu sisään tehdäksesi pyynnön' });
-  }
+function ensureAuthenticated(req, res, next) {
+  if (req.isAuthenticated()) return next();
+  res.status(401).json({ error: 'Kirjautuminen vaaditaan' });
+}
 
-  const newRequest = new Request({
-    ...req.body,
-    user: req.user._id // 🔗 Tallenna käyttäjä
-  });
-
-  const saved = await newRequest.save();
-  res.status(201).json(saved);
-});
-
-app.post('/api/offers', async (req, res) => {
-  if (!req.isAuthenticated()) {
-    return res.status(401).json({ message: 'Kirjaudu sisään lisätäksesi tarjouksen' });
-  }
-
-  const newOffer = new Offer({
-    ...req.body,
-    user: req.user._id // 🔗 Tallenna käyttäjä
-  });
-
-  const saved = await newOffer.save();
-  res.status(201).json(saved);
-});
-
-
-
-
-
-app.get('/api/my-requests', async (req, res) => {
-  if (!req.isAuthenticated()) return res.status(401).json({});
-  const data = await Request.find({ user: req.user._id });
-  res.json(data);
-});
-
-
-app.get('/me', (req, res) => {
-  if (req.isAuthenticated()) res.json(req.user);
-  else res.status(401).json({});
-});
-app.get('/me', (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json(req.user); // sisältää esim. req.user.name
-  } else {
-    res.status(401).json({});
-  }
-});
-
-// 🔑 Auth-reitit – Google & Apple
+// Auth routes
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-app.get('/auth/google/callback', passport.authenticate('google', { failureRedirect: '/' }), (req, res) => {
-  res.redirect('https://automaton.fi/tavarakyyti.html');
-});
 
+app.get('/auth/google/callback', passport.authenticate('google', {
+  failureRedirect: '/',
+  successRedirect: '/public/index.html'
+}));
 
 app.get('/logout', (req, res) => {
   req.logout(() => res.redirect('/'));
 });
 
+app.get('/me', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json(req.user);
+  } else {
+    res.status(401).json({});
+  }
+});
+
+// API routes
+app.get('/api/requests', async (req, res) => {
+  const data = await Request.find().sort({ createdAt: -1 });
+  res.json(data);
+});
+
+app.post('/api/requests', ensureAuthenticated, async (req, res) => {
+  const newRequest = new Request({ ...req.body, user: req.user._id });
+  const saved = await newRequest.save();
+  res.status(201).json(saved);
+});
+
+app.get('/api/offers', async (req, res) => {
+  const data = await Offer.find().sort({ createdAt: -1 });
+  res.json(data);
+});
+
+app.post('/api/offers', ensureAuthenticated, async (req, res) => {
+  const newOffer = new Offer({ ...req.body, user: req.user._id });
+  const saved = await newOffer.save();
+  res.status(201).json(saved);
+});
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
-  console.log(`🚀 Tavarakyyti-palvelin osoitteessa: http://localhost:${PORT}`);
+  console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`);
 });
