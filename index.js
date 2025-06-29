@@ -92,6 +92,14 @@ app.get('/api/offers', async (req, res) => {
   res.json(data);
 });
 
+app.get('/me', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json(req.user);
+  } else {
+    res.status(401).json({});
+  }
+});
+
 app.post('/api/offers', async (req, res) => {
   const newOffer = new Offer(req.body);
   const saved = await newOffer.save();
