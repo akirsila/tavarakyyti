@@ -28,6 +28,17 @@ const UserSchema = new mongoose.Schema({
   email: String,
   createdAt: { type: Date, default: Date.now }
 });
+const RequestSchema = new mongoose.Schema({
+  from: String,
+  to: String,
+  date: String,
+  size: String,
+  price: Number,
+  details: String,
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 🆕
+  createdAt: { type: Date, default: Date.now }
+});
+
 const OfferSchema = new mongoose.Schema({
   route: String,
   from: String,
@@ -36,16 +47,10 @@ const OfferSchema = new mongoose.Schema({
   vehicle: String,
   priceRange: String,
   details: String,
+  user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }, // 🆕
   createdAt: { type: Date, default: Date.now }
 });
-const RequestSchema = new mongoose.Schema({
-  from: String,
-  to: String,
-  date: String,
-  size: String,
-  price: Number,
-  details: String,
-  createdAt: { type: Date, default: Date.now }
+
 });
 const User = mongoose.model('User', UserSchema);
 const Offer = mongoose.model('Offer', OfferSchema);
@@ -85,6 +90,36 @@ passport.deserializeUser(async (id, done) => {
 });
 
 // 🛣 API-reitit
+app.post('/api/requests', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Kirjaudu sisään tehdäksesi pyynnön' });
+  }
+
+  const newRequest = new Request({
+    ...req.body,
+    user: req.user._id // 🔗 Tallenna käyttäjä
+  });
+
+  const saved = await newRequest.save();
+  res.status(201).json(saved);
+});
+
+app.post('/api/offers', async (req, res) => {
+  if (!req.isAuthenticated()) {
+    return res.status(401).json({ message: 'Kirjaudu sisään lisätäksesi tarjouksen' });
+  }
+
+  const newOffer = new Offer({
+    ...req.body,
+    user: req.user._id // 🔗 Tallenna käyttäjä
+  });
+
+  const saved = await newOffer.save();
+  res.status(201).json(saved);
+});
+
+
+
 app.get('/api/requests', async (req, res) => {
   const data = await Request.find().sort({ createdAt: -1 });
   res.json(data);
