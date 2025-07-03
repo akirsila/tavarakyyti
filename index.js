@@ -94,7 +94,12 @@ app.get('/auth/google/callback',
   (req, res) => res.redirect('https://automaton.fi/tavarakyyti.html')
 );
 
-app.get('/logout', (req, res) => req.logout(() => res.redirect('/')));
+app.get('/logout', (req, res) => {
+  req.logout(err => {
+    if (err) return res.status(500).json({ error: 'Logout error' });
+    res.redirect('/');
+  });
+});
 
 app.get('/me', (req, res) => {
   if (req.isAuthenticated()) res.json(req.user);
