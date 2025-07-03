@@ -14,12 +14,11 @@ app.use(session({ secret: 'supersecret', resave: false, saveUninitialized: true 
 app.use(passport.initialize());
 app.use(passport.session());
 
-// MongoDB
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB-yhteys OK'))
   .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
 
-// Schemat
+// 🔧 Schemat
 const RequestSchema = new mongoose.Schema({
   from: String,
   to: String,
@@ -55,11 +54,11 @@ const Request = mongoose.model('Request', RequestSchema);
 const Offer = mongoose.model('Offer', OfferSchema);
 const User = mongoose.model('User', UserSchema);
 
-// Passport – Google auth
+// 🔐 Google-kirjautuminen
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: 'https://tavarakyyti.onrender.com/auth/google/callback'
+  callbackURL: '/auth/google/callback'
 }, async (accessToken, refreshToken, profile, done) => {
   let user = await User.findOne({ providerId: profile.id });
   if (!user) {
@@ -79,38 +78,18 @@ passport.deserializeUser(async (id, done) => {
   done(null, user);
 });
 
-function ensureAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) return next();
-  res.status(401).json({ error: 'Kirjautuminen vaaditaan' });
+function requireAuth(req, res, next) {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Not logged in' });
+  next();
 }
 
-// Auth routes
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
-
-app.get('/auth/google/callback', passport.authenticate('google', {
-  failureRedirect: '/',
-  successRedirect: 'https://automaton.fi/tavarakyyti.html'
-}));
-
-app.get('/logout', (req, res) => {
-  req.logout(() => res.redirect('/'));
-});
-
-app.get('/me', (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json(req.user);
-  } else {
-    res.status(401).json({});
-  }
-});
-
-// API routes
+// 📬 API-reitit
 app.get('/api/requests', async (req, res) => {
   const data = await Request.find().sort({ createdAt: -1 });
   res.json(data);
 });
 
-app.post('/api/requests', ensureAuthenticated, async (req, res) => {
+app.post('/api/requests', requireAuth, async (req, res) => {
   const newRequest = new Request({ ...req.body, user: req.user._id });
   const saved = await newRequest.save();
   res.status(201).json(saved);
@@ -121,13 +100,31 @@ app.get('/api/offers', async (req, res) => {
   res.json(data);
 });
 
-app.post('/api/offers', ensureAuthenticated, async (req, res) => {
+app.post('/api/offers', requireAuth, async (req, res) => {
   const newOffer = new Offer({ ...req.body, user: req.user._id });
   const saved = await newOffer.save();
   res.status(201).json(saved);
 });
 
-const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`);
+app.get('/me', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json(req.user);
+  } else {
+    res.status(401).json({});
+  }
 });
+
+// 🔑 Auth
+app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+app.get('/auth/google/callback',
+  passport.authenticate('google', { failureRedirect: '/' }),
+  (req, res) => {
+    res.redirect('https://automaton.fi/tavarakyyti.html');
+  });
+
+app.get('/logout', (req, res) => {
+  req.logout(() => res.redirect('/'));
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`));
