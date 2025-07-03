@@ -90,7 +90,7 @@ passport.deserializeUser(async (id, done) => {
 // 🧪 Auth
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
 
-app.get('https://tavarakyyti.onrender.com/auth/google/callback',
+app.get('/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
     res.redirect('https://automaton.fi/tavarakyyti.html');
