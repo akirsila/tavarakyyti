@@ -1,163 +1,197 @@
-// index.js – Täydellinen versio Tavarakyyti-palvelimelle
-
-const express = require('express');
-const mongoose = require('mongoose');
-const session = require('express-session');
-const passport = require('passport');
-const GoogleStrategy = require('passport-google-oauth20').Strategy;
-const cors = require('cors');
-const dotenv = require('dotenv');
-const Stripe = require('stripe');
-
-dotenv.config();
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
-const app = express();
-app.use(cors({ origin: true, credentials: true }));
-app.use(express.json());
-
-// SESSION & AUTH
-app.use(session({ secret: 'salaisuus', resave: false, saveUninitialized: false }));
-app.use(passport.initialize());
-app.use(passport.session());
-
-const User = require('./models/User');
-const Request = require('./models/Request');
-const Offer = require('./models/Offer');
-
-passport.use(new GoogleStrategy({
-  clientID: process.env.GOOGLE_CLIENT_ID,
-  clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-  callbackURL: process.env.GOOGLE_CALLBACK_URL
-
-}, async (accessToken, refreshToken, profile, done) => {
-  const existingUser = await User.findOne({ googleId: profile.id });
-  if (existingUser) return done(null, existingUser);
-  const user = await User.create({
-    googleId: profile.id,
-    name: profile.displayName
-  });
-  done(null, user);
-}));
-
-passport.serializeUser((user, done) => done(null, user.id));
-passport.deserializeUser((id, done) => User.findById(id).then(u => done(null, u)));
-
-// ROUTES
-app.get('/auth/google', passport.authenticate('google', { scope: ['profile'] }));
-app.get('/auth/google/callback', passport.authenticate('google', {
-  failureRedirect: '/',
-  successRedirect: 'https://automaton.fi/tavarakyyti.html'
-}));
-app.get('/logout', (req, res) => {
-  req.logout(() => res.redirect('/'));
-});
-
-app.get('/me', (req, res) => {
-  if (!req.user) return res.status(401).json({ error: 'Unauthorized' });
-  res.json(req.user);
-});
-
-// API - Requests & Offers
-app.post('/api/requests', async (req, res) => {
-  try {
-    const request = await Request.create({ ...req.body, user: req.user?._id });
-    res.status(201).json(request);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
-
-app.get('/api/requests', async (req, res) => {
-  res.json(await Request.find());
-});
-
-app.delete('/api/requests/:id', async (req, res) => {
-  await Request.findByIdAndDelete(req.params.id);
-  res.sendStatus(204);
-});
-
-app.put('/api/requests/:id', async (req, res) => {
-  const updated = await Request.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(updated);
-});
-
-app.post('/api/offers', async (req, res) => {
-  try {
-    const data = { ...req.body, user: req.user?._id };
-    if (typeof data.recurring === 'string') {
-      data.recurring = data.recurring === 'on';
+<!DOCTYPE html>
+<html lang="fi">
+<head>
+  <meta charset="UTF-8">
+  <title>Kuljetuslista</title>
+  <style>
+    body { font-family: sans-serif; background: #f0f0f0; padding: 30px; }
+    h1, h2 { text-align: center; }
+    .item { background: white; margin: 10px auto; padding: 15px; max-width: 600px; border-radius: 8px; box-shadow: 0 0 5px #ccc; }
+    .item strong { display: inline-block; width: 110px; }
+    .btn {
+      margin-top: 10px;
+      margin-right: 10px;
+      background: #3498db;
+      color: white;
+      border: none;
+      padding: 8px 14px;
+      border-radius: 5px;
+      cursor: pointer;
     }
-    const offer = await Offer.create(data);
-    res.status(201).json(offer);
-  } catch (e) {
-    res.status(400).json({ error: e.message });
-  }
-});
+    .btn.delete { background: #e74c3c; }
+    .btn.pay { background: #27ae60; }
+    .btn.release { background: #f39c12; }
+    #user-info { text-align: center; margin-bottom: 20px; }
+    a { display: block; text-align: center; margin-top: 30px; text-decoration: none; color: #4CAF50; }
+    .edit-form input, .edit-form textarea { width: 100%; margin: 4px 0; }
+  </style>
+</head>
+<body>
 
-app.get('/api/offers', async (req, res) => {
-  res.json(await Offer.find());
-});
+  <h1>Kuljetuslista</h1>
+  <div id="user-info">Ladataan käyttäjätietoja...</div>
 
-app.delete('/api/offers/:id', async (req, res) => {
-  await Offer.findByIdAndDelete(req.params.id);
-  res.sendStatus(204);
-});
+  <h2>📦 Kuljetuspyynnöt</h2>
+  <div id="requests"></div>
 
-app.put('/api/offers/:id', async (req, res) => {
-  const updated = await Offer.findByIdAndUpdate(req.params.id, req.body, { new: true });
-  res.json(updated);
-});
+  <h2>🚗 Kuljetustarjoukset</h2>
+  <div id="offers"></div>
 
-// Stripe Maksu + Katevarauslogiikka
-app.post('/api/payment-intent', async (req, res) => {
-  try {
-    const { amount, transportId } = req.body;
+  <a href="https://automaton.fi/tavarakyyti.html">⬅️ Takaisin etusivulle</a>
 
-    const paymentIntent = await stripe.paymentIntents.create({
-      amount: Math.round(amount * 100),
-      currency: 'eur',
-      capture_method: 'manual', // Katevaraus
-      metadata: { transportId }
-    });
+  <script>
+    let currentUserId = null;
 
-    res.json({ clientSecret: paymentIntent.client_secret });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+    async function loadUser() {
+      const res = await fetch('https://tavarakyyti.onrender.com/me', { credentials: 'include' });
+      if (res.ok) {
+        const user = await res.json();
+        currentUserId = user._id;
+        document.getElementById('user-info').textContent = `Kirjautunut: ${user.name}`;
+      } else {
+        document.getElementById('user-info').textContent = 'Et ole kirjautunut.';
+      }
+    }
 
-app.post('/api/capture-payment', async (req, res) => {
-  try {
-    const { paymentIntentId } = req.body;
-    const captured = await stripe.paymentIntents.capture(paymentIntentId);
-    res.json(captured);
-  } catch (err) {
-    res.status(400).json({ error: err.message });
-  }
-});
+    async function loadData() {
+      const [requests, offers] = await Promise.all([
+        fetch('https://tavarakyyti.onrender.com/api/requests').then(r => r.json()),
+        fetch('https://tavarakyyti.onrender.com/api/offers').then(r => r.json())
+      ]);
 
-// Kuljetuksen hyväksyntä
-app.post('/api/accept-transport', async (req, res) => {
-  try {
-    const { offerId } = req.body;
-    const offer = await Offer.findById(offerId);
-    if (!offer) return res.status(404).json({ error: 'Offer not found' });
-    offer.accepted = true;
-    await offer.save();
-    res.json({ message: 'Kuljetus hyväksytty' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
+      renderList(requests, 'requests', 'request');
+      renderList(offers, 'offers', 'offer');
+    }
 
-// DB + SERVER
-mongoose.connect(process.env.MONGO_URI)
-  .then(() => {
-    console.log('✅ MongoDB-yhteys OK');
-    app.listen(process.env.PORT || 10000, () => {
-      console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${process.env.PORT || 10000}`);
-    });
-  })
-  .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
+    function renderList(items, containerId, type) {
+      const container = document.getElementById(containerId);
+      container.innerHTML = '';
+      for (const item of items) {
+        const div = document.createElement('div');
+        div.className = 'item';
+
+        const keys = Object.entries(item)
+          .filter(([k]) => !['_id', '__v', 'createdAt', 'user'].includes(k))
+          .map(([k, v]) => `<div><strong>${suomiKentta(k)}:</strong> ${v}</div>`)
+          .join('');
+
+        div.innerHTML = keys;
+
+        if (item.user === currentUserId) {
+          div.innerHTML += `
+            <button class="btn delete" onclick="deleteItem('${type}', '${item._id}')">Poista</button>
+            <button class="btn" onclick="editItem('${type}', '${item._id}', ${JSON.stringify(item).replace(/"/g, '&quot;')})">Muokkaa</button>
+          `;
+        } else {
+          div.innerHTML += `
+            <button class="btn pay" onclick="authorizePayment('${item._id}')">Varaa 500 € kate</button>
+            <button class="btn release" onclick="releasePayment('${item._id}')">Vapauta maksu</button>
+          `;
+        }
+
+        container.appendChild(div);
+      }
+    }
+
+    function suomiKentta(key) {
+      const map = {
+        from: 'Mistä',
+        to: 'Minne',
+        date: 'Päivämäärä',
+        size: 'Koko',
+        price: 'Hinta (€)',
+        route: 'Reitti',
+        vehicle: 'Ajoneuvo',
+        priceRange: 'Hintahaarukka (€)',
+        details: 'Lisätiedot',
+        recurring: 'Jatkuva matka'
+      };
+      return map[key] || key;
+    }
+
+    async function deleteItem(type, id) {
+      if (!confirm('Haluatko varmasti poistaa tämän?')) return;
+      const res = await fetch(`https://tavarakyyti.onrender.com/api/${type}s/${id}`, {
+        method: 'DELETE',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        alert('Poistettu!');
+        loadData();
+      } else {
+        alert('Virhe poistettaessa.');
+      }
+    }
+
+    function editItem(type, id, itemData) {
+      const form = document.createElement('form');
+      form.className = 'edit-form';
+      form.onsubmit = async (e) => {
+        e.preventDefault();
+        const formData = Object.fromEntries(new FormData(form));
+        const res = await fetch(`https://tavarakyyti.onrender.com/api/${type}s/${id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(formData)
+        });
+        if (res.ok) {
+          alert('Päivitetty!');
+          loadData();
+        } else {
+          alert('Virhe päivityksessä.');
+        }
+      };
+
+      Object.entries(itemData).forEach(([key, val]) => {
+        if (['_id', '__v', 'createdAt', 'user'].includes(key)) return;
+        const label = document.createElement('label');
+        label.textContent = suomiKentta(key);
+        const input = key === 'details' ? document.createElement('textarea') : document.createElement('input');
+        input.name = key;
+        input.value = val;
+        form.appendChild(label);
+        form.appendChild(input);
+      });
+
+      const submit = document.createElement('button');
+      submit.className = 'btn';
+      submit.textContent = 'Tallenna';
+      form.appendChild(submit);
+
+      const wrapper = document.createElement('div');
+      wrapper.className = 'item';
+      wrapper.appendChild(form);
+
+      document.getElementById(type === 'request' ? 'requests' : 'offers').prepend(wrapper);
+    }
+
+    async function authorizePayment(id) {
+      const res = await fetch(`https://tavarakyyti.onrender.com/api/payments/authorize/${id}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        alert('Katevaraus tehty! Maksu odottaa vapautusta.');
+      } else {
+        alert('Virhe varauksessa.');
+      }
+    }
+
+    async function releasePayment(id) {
+      const res = await fetch(`https://tavarakyyti.onrender.com/api/payments/release/${id}`, {
+        method: 'POST',
+        credentials: 'include'
+      });
+      if (res.ok) {
+        alert('Maksu vapautettu!');
+      } else {
+        alert('Virhe vapautuksessa.');
+      }
+    }
+
+    loadUser().then(loadData);
+  </script>
+
+</body>
+</html>
