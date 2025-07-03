@@ -102,21 +102,36 @@ app.get('/me', (req, res) => {
   }
 });
 // Kuljetuspyynnön poisto
+// index.js – lisää nämä
 app.delete('/api/requests/:id', async (req, res) => {
-  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
-  const r = await Request.findById(req.params.id);
-  if (!r || r.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
-  await r.deleteOne();
+  const doc = await Request.findById(req.params.id);
+  if (!doc || !req.user || doc.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  await doc.deleteOne();
   res.json({ success: true });
 });
 
-// Kuljetustarjouksen poisto
+app.put('/api/requests/:id', async (req, res) => {
+  const doc = await Request.findById(req.params.id);
+  if (!doc || !req.user || doc.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  Object.assign(doc, req.body);
+  await doc.save();
+  res.json(doc);
+});
+
+// Vastaavat offer-reitit:
 app.delete('/api/offers/:id', async (req, res) => {
-  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
-  const o = await Offer.findById(req.params.id);
-  if (!o || o.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
-  await o.deleteOne();
+  const doc = await Offer.findById(req.params.id);
+  if (!doc || !req.user || doc.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  await doc.deleteOne();
   res.json({ success: true });
+});
+
+app.put('/api/offers/:id', async (req, res) => {
+  const doc = await Offer.findById(req.params.id);
+  if (!doc || !req.user || doc.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  Object.assign(doc, req.body);
+  await doc.save();
+  res.json(doc);
 });
 
 // 📬 REST API
