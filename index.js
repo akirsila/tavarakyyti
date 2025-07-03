@@ -1,4 +1,4 @@
-// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Auth)
+// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Passport)
 const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
@@ -8,9 +8,19 @@ const GoogleStrategy = require('passport-google-oauth20').Strategy;
 require('dotenv').config();
 
 const app = express();
+app.set('trust proxy', 1); // Trust Render proxy
+
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
-app.use(session({ secret: 'supersecret', resave: false, saveUninitialized: true }));
+app.use(session({
+  secret: 'supersecret',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: true,
+    sameSite: 'none'
+  }
+}));
 app.use(passport.initialize());
 app.use(passport.session());
 
@@ -18,7 +28,6 @@ mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB-yhteys OK'))
   .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
 
-// 🔧 Schemat
 const RequestSchema = new mongoose.Schema({
   from: String,
   to: String,
@@ -54,7 +63,7 @@ const Request = mongoose.model('Request', RequestSchema);
 const Offer = mongoose.model('Offer', OfferSchema);
 const User = mongoose.model('User', UserSchema);
 
-// 🔐 Google-kirjautuminen
+// 🔐 Google Strategy
 passport.use(new GoogleStrategy({
   clientID: process.env.GOOGLE_CLIENT_ID,
   clientSecret: process.env.GOOGLE_CLIENT_SECRET,
@@ -78,44 +87,9 @@ passport.deserializeUser(async (id, done) => {
   done(null, user);
 });
 
-function requireAuth(req, res, next) {
-  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Not logged in' });
-  next();
-}
-
-// 📬 API-reitit
-app.get('/api/requests', async (req, res) => {
-  const data = await Request.find().sort({ createdAt: -1 });
-  res.json(data);
-});
-
-app.post('/api/requests', requireAuth, async (req, res) => {
-  const newRequest = new Request({ ...req.body, user: req.user._id });
-  const saved = await newRequest.save();
-  res.status(201).json(saved);
-});
-
-app.get('/api/offers', async (req, res) => {
-  const data = await Offer.find().sort({ createdAt: -1 });
-  res.json(data);
-});
-
-app.post('/api/offers', requireAuth, async (req, res) => {
-  const newOffer = new Offer({ ...req.body, user: req.user._id });
-  const saved = await newOffer.save();
-  res.status(201).json(saved);
-});
-
-app.get('/me', (req, res) => {
-  if (req.isAuthenticated()) {
-    res.json(req.user);
-  } else {
-    res.status(401).json({});
-  }
-});
-
-// 🔑 Auth
+// 🧪 Auth
 app.get('/auth/google', passport.authenticate('google', { scope: ['profile', 'email'] }));
+
 app.get('https://tavarakyyti.onrender.com/auth/google/callback',
   passport.authenticate('google', { failureRedirect: '/' }),
   (req, res) => {
@@ -126,5 +100,40 @@ app.get('/logout', (req, res) => {
   req.logout(() => res.redirect('/'));
 });
 
+app.get('/me', (req, res) => {
+  if (req.isAuthenticated()) {
+    res.json(req.user);
+  } else {
+    res.status(401).json({});
+  }
+});
+
+// 📬 REST API
+app.get('/api/requests', async (req, res) => {
+  const data = await Request.find().sort({ createdAt: -1 });
+  res.json(data);
+});
+
+app.post('/api/requests', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
+  const newRequest = new Request({ ...req.body, user: req.user._id });
+  const saved = await newRequest.save();
+  res.status(201).json(saved);
+});
+
+app.get('/api/offers', async (req, res) => {
+  const data = await Offer.find().sort({ createdAt: -1 });
+  res.json(data);
+});
+
+app.post('/api/offers', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
+  const newOffer = new Offer({ ...req.body, user: req.user._id });
+  const saved = await newOffer.save();
+  res.status(201).json(saved);
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`));
+app.listen(PORT, () => {
+  console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`);
+});
