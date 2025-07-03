@@ -44,7 +44,6 @@ const RequestSchema = new mongoose.Schema({
   size: String,
   price: Number,
   details: String,
-  recurring: Boolean, //työmatka
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
@@ -56,6 +55,7 @@ const OfferSchema = new mongoose.Schema({
   vehicle: String,
   priceRange: String,
   details: String,
+  recurring: Boolean, //työmatka
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
