@@ -101,6 +101,23 @@ app.get('/me', (req, res) => {
     res.status(401).json({});
   }
 });
+// Kuljetuspyynnön poisto
+app.delete('/api/requests/:id', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
+  const r = await Request.findById(req.params.id);
+  if (!r || r.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  await r.deleteOne();
+  res.json({ success: true });
+});
+
+// Kuljetustarjouksen poisto
+app.delete('/api/offers/:id', async (req, res) => {
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'Unauthorized' });
+  const o = await Offer.findById(req.params.id);
+  if (!o || o.user.toString() !== req.user._id.toString()) return res.status(403).json({ error: 'Forbidden' });
+  await o.deleteOne();
+  res.json({ success: true });
+});
 
 // 📬 REST API
 app.get('/api/requests', async (req, res) => {
