@@ -152,7 +152,7 @@ app.post('/api/accept-transport', async (req, res) => {
 });
 
 // DB + SERVER
-mongoose.connect(process.env.MONGODB_URI)
+mongoose.connect(process.env.MONGO_URI)
   .then(() => {
     console.log('✅ MongoDB-yhteys OK');
     app.listen(process.env.PORT || 10000, () => {
