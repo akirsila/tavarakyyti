@@ -46,6 +46,10 @@ const OfferSchema = new mongoose.Schema({
   priceRange: String,
   details: String,
   recurring: Boolean,
+  accepted: { type: Boolean, default: false },
+released: { type: Boolean, default: false },
+stripePaymentIntentId: String,
+
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
