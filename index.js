@@ -94,12 +94,17 @@ app.get('/auth/google/callback',
   (req, res) => res.redirect('https://automaton.fi/tavarakyyti.html')
 );
 
-app.get('/logout', (req, res) => {
+app.get('/logout', (req, res, next) => {
   req.logout(err => {
-    if (err) return res.status(500).json({ error: 'Logout error' });
-    res.redirect('/');
+    if (err) return next(err);
+    req.session.destroy(() => {
+      res.clearCookie('connect.sid', { path: '/', sameSite: 'none', secure: true });
+      res.redirect('https://automaton.fi/tavarakyyti.html');
+
+    });
   });
 });
+
 
 app.get('/me', (req, res) => {
   if (req.isAuthenticated()) res.json(req.user);
