@@ -33,6 +33,7 @@ const RequestSchema = new mongoose.Schema({
   size: String,
   price: Number,
   details: String,
+  accepted: { type: Boolean, default: false }
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
@@ -46,6 +47,7 @@ const OfferSchema = new mongoose.Schema({
   priceRange: String,
   details: String,
   recurring: Boolean,
+  accepted: { type: Boolean, default: false }
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   createdAt: { type: Date, default: Date.now }
 });
