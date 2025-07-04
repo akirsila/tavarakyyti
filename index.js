@@ -171,6 +171,18 @@ app.post('/api/payment/capture', async (req, res) => {
     res.status(500).json({ error: 'Katevarauksen vapautus epäonnistui' });
   }
 });
+app.post('/api/accept-transport', async (req, res) => {
+  try {
+    const { offerId } = req.body;
+    const offer = await Offer.findById(offerId);
+    if (!offer) return res.status(404).json({ error: 'Offer not found' });
+    offer.accepted = true;
+    await offer.save();
+    res.json({ message: 'Kuljetus hyväksytty' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`));
