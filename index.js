@@ -184,5 +184,9 @@ app.post('/api/accept-transport', async (req, res) => {
   }
 });
 
+const adminRouter = require('./routes/adminRouter');
+app.use('/api/admin', adminRouter); // admin
+app.use('/api/chat', chatRouter); // chat
+
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => console.log(`🚀 Tavarakyyti-palvelin käynnissä: http://localhost:${PORT}`));
