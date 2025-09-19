@@ -1,1 +1,59 @@
-<content omitted for brevity>
+<html lang="fi">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>Tavarakyyti – Raportit</title>
+<style>
+body{background:#0e0e0e;color:#eee;font:14px system-ui;margin:20px}
+table{width:100%;border-collapse:collapse}
+td,th{border:1px solid #333;padding:8px}
+input,select,button{background:#1a1a1a;color:#eee;border:1px solid #333;border-radius:6px;padding:6px}
+</style>
+</head>
+<body>
+<h1>Raportit</h1>
+<div style="margin:10px 0;display:flex;gap:6px">
+<input id="token" placeholder="Admin JWT" style="flex:1"/>
+<button id="load">Lataa</button>
+</div>
+<table>
+<thead><tr><th>ID</th><th>Aihe</th><th>Status</th><th>Luotu</th><th>Toiminnot</th></tr></thead>
+<tbody id="rows"></tbody>
+</table>
+
+
+<script>
+const rows = document.getElementById('rows');
+const tokenEl = document.getElementById('token');
+
+
+document.getElementById('load').onclick = load;
+
+
+async function load(){
+const token = tokenEl.value.trim();
+const r = await fetch('/api/admin/reports', { headers: { Authorization: 'Bearer '+token } });
+const list = await r.json();
+rows.innerHTML = '';
+for(const it of list){
+const tr = document.createElement('tr');
+tr.innerHTML = `<td>${it._id}</td><td>${it.reason||''}</td><td>${it.status}</td><td>${new Date(it.createdAt).toLocaleString()}</td>
+<td>
+<button data-id="${it._id}" data-s="reviewing">Avaa</button>
+<button data-id="${it._id}" data-s="closed">Sulje</button>
+</td>`;
+rows.appendChild(tr);
+}
+rows.onclick = async (e)=>{
+if(e.target.tagName==='BUTTON'){
+const id = e.target.getAttribute('data-id');
+const s = e.target.getAttribute('data-s');
+const token = tokenEl.value.trim();
+await fetch('/api/admin/reports/'+id, { method:'POST', headers:{ 'Content-Type':'application/json', Authorization:'Bearer '+token }, body: JSON.stringify({ status:s })});
+load();
+}
+}
+}
+</script>
+</body>
+</html>
