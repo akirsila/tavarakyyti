@@ -1,4 +1,4 @@
-// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Passport + Stripe)
+// 📦 index.js – Tavarakyyti-backend (Node + Express + MongoDB + Passport + Stripe + Chat)
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
@@ -13,12 +13,11 @@ require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: { origin: true, credentials: true }
-});
+const io = new Server(server, { cors: { origin: true, credentials: true } });
 
 app.set('trust proxy', 1);
 
+// --- perus middlewares ---
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 app.use(session({
@@ -30,6 +29,7 @@ app.use(session({
 app.use(passport.initialize());
 app.use(passport.session());
 
+// --- Mongo ---
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log('✅ MongoDB-yhteys OK'))
   .catch(err => console.error('❌ MongoDB-yhteysvirhe:', err));
@@ -95,6 +95,7 @@ const ConversationSchema = new mongoose.Schema({
 }, { timestamps: true });
 ConversationSchema.index({ 'participants.userId': 1 });
 ConversationSchema.index({ lastMessageAt: -1 });
+ConversationSchema.index({ type: 1, transportId: 1 });
 
 const AttachmentSchema = new mongoose.Schema({
   url: String, mime: String, size: Number, name: String
@@ -133,10 +134,7 @@ passport.use(new GoogleStrategy({
   return done(null, user);
 }));
 passport.serializeUser((user, done) => done(null, user._id));
-passport.deserializeUser(async (id, done) => {
-  const user = await User.findById(id);
-  done(null, user);
-});
+passport.deserializeUser(async (id, done) => { done(null, await User.findById(id)); });
 
 /* =========================
    Auth reitit (Google + me + logout)
@@ -161,7 +159,7 @@ app.get('/me', (req, res) => {
 });
 
 /* =========================
-   👉 UUSI: /api/auth/jwt – tee Bearer-JWT sessiosta
+   👉 /api/auth/jwt – tee Bearer-JWT sessiosta
    ========================= */
 app.get('/api/auth/jwt', (req, res) => {
   const u = req.user;
@@ -274,12 +272,23 @@ app.get('/api/chat/conversations', chatAuth, async (req, res) => {
   res.json(list);
 });
 
-// Luo keskustelu
+// Luo keskustelu (direct/transport)
 app.post('/api/chat/conversations', chatAuth, async (req, res) => {
   const { type, transportId, participantIds } = req.body || {};
   if (!type || !Array.isArray(participantIds) || !participantIds.length) {
     return res.status(400).json({ error: 'invalid_payload' });
   }
+
+  // transport-tyypissä yritä estää duplikaatit (sama transport + samat osallistujat)
+  if (type === 'transport' && transportId) {
+    const exists = await Conversation.findOne({
+      type: 'transport',
+      transportId,
+      'participants.userId': { $all: [req.chatUser.id, ...participantIds] }
+    });
+    if (exists) return res.json(exists);
+  }
+
   const unique = Array.from(new Set([req.chatUser.id, ...participantIds.map(String)])).map(id => ({ userId: id }));
   const convo = await Conversation.create({
     type,
@@ -290,21 +299,28 @@ app.post('/api/chat/conversations', chatAuth, async (req, res) => {
   res.json(convo);
 });
 
-// Lataa viestit
+// Lataa viestit (tukee after=ISO8601 tai before=ISO8601) — palautus nousevassa aikajärjestyksessä
 app.get('/api/chat/conversations/:id/messages', chatAuth, async (req, res) => {
   const convo = await Conversation.findById(req.params.id);
   if (!convo) return res.status(404).json({ error: 'not_found' });
   if (!convo.participants.some(p => String(p.userId) === String(req.chatUser.id))) {
     return res.status(403).json({ error: 'forbidden' });
   }
-  const { before, limit = 50 } = req.query;
+
+  const { before, after, limit = 50 } = req.query;
   const q = { conversationId: convo._id };
-  if (before) q.createdAt = { $lt: new Date(before) };
-  const msgs = await Message.find(q).sort({ createdAt: -1 }).limit(Number(limit)).lean();
-  res.json(msgs.reverse());
+
+  if (after) {
+    q.createdAt = { $gt: new Date(after) };
+  } else if (before) {
+    q.createdAt = { $lt: new Date(before) };
+  }
+
+  const msgs = await Message.find(q).sort({ createdAt: 1 }).limit(Number(limit)).lean();
+  res.json(msgs);
 });
 
-// Lähetä viesti
+// Lähetä viesti – palauttaa 201 ja täyden viestin
 app.post('/api/chat/conversations/:id/messages', chatAuth, async (req, res) => {
   const convo = await Conversation.findById(req.params.id);
   if (!convo) return res.status(404).json({ error: 'not_found' });
@@ -314,23 +330,32 @@ app.post('/api/chat/conversations/:id/messages', chatAuth, async (req, res) => {
   if (convo.blockedPairs?.some(bp => String(bp.blocked) === String(req.chatUser.id))) {
     return res.status(403).json({ error: 'blocked' });
   }
+
   const text = String(req.body?.text || '').slice(0, 5000);
   const attachments = Array.isArray(req.body?.attachments) ? req.body.attachments : [];
+
   const msg = await Message.create({
     conversationId: convo._id,
     senderId: req.chatUser.id,
     text, attachments
   });
+
   convo.lastMessageAt = new Date();
   await convo.save();
 
   const payload = {
-    _id: msg._id, conversationId: msg.conversationId, senderId: msg.senderId,
-    text: msg.text, attachments: msg.attachments, createdAt: msg.createdAt, system: msg.system
+    _id: msg._id,
+    conversationId: msg.conversationId,
+    senderId: msg.senderId,
+    text: msg.text,
+    attachments: msg.attachments,
+    createdAt: msg.createdAt,
+    system: msg.system
   };
+
   io.to(`convo:${convo._id}`).emit('chat:message:new', { message: payload });
 
-  res.json({ message: payload });
+  res.status(201).json({ message: payload });
 });
 
 /* =========================
@@ -344,23 +369,20 @@ io.use((socket, next) => {
       socket.user = { id: p.id, isAdmin: !!p.isAdmin };
       return next();
     }
-    // Passport-session via cookie ei ole triviaalisti saatavilla WS:ssä tässä setissä,
-    // joten edellytetään Bearer tai käytetään vain REST fallbackia.
+    // Jos ei Beareria → ei autentikoida WS:ää; front fallbackaa REST-polliin.
     return next();
   } catch (e) {
-    return next(); // ei kaadeta — client fallbackaa REST-polliin
+    return next();
   }
 });
 
 io.on('connection', (socket) => {
-  socket.on('chat:join', async ({ conversationId }) => {
-    if (!conversationId) return;
-    // (valinnainen) voisi tarkistaa osallistumisen, mutta vaatii DB-kyselyn
-    socket.join(`convo:${conversationId}`);
+  socket.on('chat:join', ({ conversationId }) => {
+    if (conversationId) socket.join(`convo:${conversationId}`);
   });
 
   socket.on('chat:typing', ({ conversationId, isTyping }) => {
-    io.to(`convo:${conversationId}`).emit('chat:typing', { isTyping: !!isTyping });
+    if (conversationId) io.to(`convo:${conversationId}`).emit('chat:typing', { isTyping: !!isTyping });
   });
 
   socket.on('chat:message', async ({ conversationId, text = '', attachments = [], tempId }) => {
@@ -378,9 +400,7 @@ io.on('connection', (socket) => {
         text: msg.text, attachments: msg.attachments, createdAt: msg.createdAt, system: msg.system
       };
       io.to(`convo:${conversationId}`).emit('chat:message:new', { tempId, message: payload });
-    } catch (e) {
-      // hiljainen
-    }
+    } catch (e) {}
   });
 });
 
